@@ -153,8 +153,8 @@ async def _api_get(path: str, params: Optional[dict] = None) -> dict:
         client = await _get_client()
         response = await client.get(f"{API_BASE}{path}", params=params, headers=_auth_headers())
 
-        response.raise_for_status()
-        return response.json()
+    response.raise_for_status()
+    return response.json()
 
 
 def _handle_error(e: Exception) -> str:
