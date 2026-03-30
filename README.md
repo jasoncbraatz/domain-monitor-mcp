@@ -120,10 +120,11 @@ The API rate limit is 200 requests per session (observed from `x-ratelimit-limit
 PRs welcome! Some ideas for future improvements:
 
 - ~~Add domain to monitoring~~ ✅ Done (`domain_monitor_add_domain`)
-- Remove a domain from monitoring
 - Support for uptime monitor queries
 - Webhook/notification preference management
 - Support for the domain availability checker
+
+**Note on deletions:** Removing a domain from monitoring is intentionally not supported here — that's a destructive action best done through the domain-monitor.io web UI where you can see exactly what you're removing. A little friction before deleting things is a feature, not a bug.
 
 If you're the domain-monitor.io developer and want to add official API token support, this project would love to adopt it — just open an issue!
 
