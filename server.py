@@ -6,14 +6,13 @@ Provides tools to query domain expiration data from domain-monitor.io,
 enabling LLMs to answer questions like "what domains are expiring soon?"
 without the user needing to open a browser.
 
-Authentication uses the domain-monitor.io email/password credentials via
-Laravel Sanctum session-based auth. Sessions are maintained in memory and
-auto-refreshed on expiry.
+Authentication uses JWT Bearer tokens via the Nuxt Auth module endpoint.
+Tokens expire after 30 minutes and are automatically refreshed on 401.
 
-Discovered API (unofficial - reverse engineered from browser network traffic):
+Discovered API (unofficial - reverse engineered from browser network traffic
+and Nuxt app JS bundle inspection):
+  Auth:      POST https://domain-monitor.io/api/auth/login  → JWT token
   Base:      https://api.domain-monitor.io/api/
-  Auth:      https://domain-monitor.io/api/auth/login  (POST)
-  CSRF:      https://api.domain-monitor.io/sanctum/csrf-cookie  (GET)
   Dashboard: /api/account-dashboard
   Account:   /api/account
   Domains:   /api/account/{user_id}/domains
@@ -21,8 +20,8 @@ Discovered API (unofficial - reverse engineered from browser network traffic):
 
 import json
 import os
-from datetime import date, datetime, timedelta
-from typing import Any, Optional
+from datetime import date, timedelta
+from typing import Optional
 
 import httpx
 from mcp.server.fastmcp import FastMCP
@@ -32,106 +31,119 @@ from pydantic import BaseModel, ConfigDict, Field
 # Constants
 # ---------------------------------------------------------------------------
 
-API_BASE = "https://api.domain-monitor.io/api"
-AUTH_BASE = "https://domain-monitor.io"
-CSRF_URL = "https://api.domain-monitor.io/sanctum/csrf-cookie"
-LOGIN_URL = "https://domain-monitor.io/api/auth/login"
+API_BASE    = "https://api.domain-monitor.io/api"
+CSRF_URL    = "https://api.domain-monitor.io/sanctum/csrf-cookie"
+LOGIN_URL   = "https://api.domain-monitor.io/login"
 
 # Loaded from environment variables
-EMAIL = os.environ.get("DOMAIN_MONITOR_EMAIL", "")
+EMAIL    = os.environ.get("DOMAIN_MONITOR_EMAIL", "")
 PASSWORD = os.environ.get("DOMAIN_MONITOR_PASSWORD", "")
 
 # ---------------------------------------------------------------------------
-# Session management
+# Token / session management
 # ---------------------------------------------------------------------------
 
 class _Session:
-    """Holds the authenticated httpx client and user_id across tool calls."""
-    client: Optional[httpx.AsyncClient] = None
-    user_id: Optional[int] = None
+    """Holds session cookies, XSRF token, and user_id in memory across tool calls."""
+    client:     Optional[httpx.AsyncClient] = None
+    xsrf_token: Optional[str] = None
+    user_id:    Optional[int] = None
 
 _session = _Session()
 
 
+def _auth_headers(extra: Optional[dict] = None) -> dict:
+    """Return headers required for authenticated API calls."""
+    headers = {
+        "Accept":         "application/json",
+        "Content-Type":   "application/json",
+        "Origin":         "https://domain-monitor.io",
+        "Referer":        "https://domain-monitor.io/",
+        "X-Requested-With": "XMLHttpRequest",
+    }
+    if _session.xsrf_token:
+        headers["X-XSRF-TOKEN"] = _session.xsrf_token
+    if extra:
+        headers.update(extra)
+    return headers
+
+
 async def _get_client() -> httpx.AsyncClient:
-    """Return an authenticated httpx client, creating/refreshing as needed."""
+    """Return an authenticated client, creating one if needed."""
     if _session.client is not None:
         return _session.client
-    return await _authenticate()
+    await _authenticate()
+    return _session.client
 
 
-async def _authenticate() -> httpx.AsyncClient:
-    """Perform the Sanctum CSRF + login flow and store the resulting client."""
+async def _authenticate() -> None:
+    """Fetch CSRF cookie then POST credentials. Stores session in _session."""
     if not EMAIL or not PASSWORD:
         raise RuntimeError(
             "Missing credentials. Set DOMAIN_MONITOR_EMAIL and "
             "DOMAIN_MONITOR_PASSWORD environment variables."
         )
 
+    import urllib.parse
+
     client = httpx.AsyncClient(
         follow_redirects=True,
         timeout=30.0,
-        headers={
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-            "Origin": "https://domain-monitor.io",
-            "Referer": "https://domain-monitor.io/",
-        },
+        headers={"User-Agent": "domain-monitor-mcp/1.0"},
     )
 
-    # Step 1: Fetch CSRF cookie (sets laravel_session + XSRF-TOKEN cookies)
-    csrf_response = await client.get(CSRF_URL)
-    csrf_response.raise_for_status()
+    # Step 1: Fetch CSRF cookie — sets XSRF-TOKEN + domain_monitor_session cookies
+    csrf_resp = await client.get(
+        CSRF_URL,
+        headers={"Accept": "application/json", "Origin": "https://domain-monitor.io"},
+    )
+    csrf_resp.raise_for_status()
 
-    # Step 2: Extract XSRF-TOKEN from cookies for the X-XSRF-TOKEN header
-    xsrf_token = client.cookies.get("XSRF-TOKEN")
-    if xsrf_token:
-        # URL-decode the token value
-        import urllib.parse
-        xsrf_token = urllib.parse.unquote(xsrf_token)
-        client.headers.update({"X-XSRF-TOKEN": xsrf_token})
+    xsrf_raw = client.cookies.get("XSRF-TOKEN", "")
+    _session.xsrf_token = urllib.parse.unquote(xsrf_raw)
 
-    # Step 3: POST login credentials
-    login_response = await client.post(
+    # Step 2: POST login credentials with XSRF token
+    login_resp = await client.post(
         LOGIN_URL,
         json={"email": EMAIL, "password": PASSWORD},
+        headers=_auth_headers(),
     )
-
-    if login_response.status_code == 422:
-        raise RuntimeError("Login failed: invalid email or password.")
-    if login_response.status_code not in (200, 204):
+    if login_resp.status_code == 422:
+        await client.aclose()
+        raise RuntimeError("Login failed: check your DOMAIN_MONITOR_EMAIL and DOMAIN_MONITOR_PASSWORD.")
+    if login_resp.status_code not in (200, 204):
+        await client.aclose()
         raise RuntimeError(
-            f"Login failed with status {login_response.status_code}: "
-            f"{login_response.text[:200]}"
+            f"Login failed with status {login_resp.status_code}: {login_resp.text[:200]}"
         )
 
-    # Step 4: Fetch account to get user_id for domain queries
-    account_response = await client.get(
-        f"{API_BASE}/account",
-        headers={"X-Requested-With": "XMLHttpRequest"},
-    )
-    account_response.raise_for_status()
-    account_data = account_response.json()
-    _session.user_id = account_data.get("id")
+    # Refresh XSRF token after login (Laravel rotates it)
+    xsrf_raw = client.cookies.get("XSRF-TOKEN", xsrf_raw)
+    _session.xsrf_token = urllib.parse.unquote(xsrf_raw)
 
-    _session.client = client
-    return client
+    # Step 3: Fetch account to resolve user_id (needed for domain queries)
+    acct_resp = await client.get(f"{API_BASE}/account", headers=_auth_headers())
+    acct_resp.raise_for_status()
+    _session.user_id = acct_resp.json().get("id")
+    _session.client  = client
 
 
 async def _api_get(path: str, params: Optional[dict] = None) -> dict:
-    """Make an authenticated GET request, retrying once on 401."""
+    """Make an authenticated GET request, retrying once on 401 (session expired)."""
     client = await _get_client()
-    response = await client.get(f"{API_BASE}{path}", params=params)
+    response = await client.get(f"{API_BASE}{path}", params=params, headers=_auth_headers())
 
     if response.status_code == 401:
-        # Session expired — re-authenticate and retry
-        _session.client = None
-        _session.user_id = None
-        client = await _authenticate()
-        response = await client.get(f"{API_BASE}{path}", params=params)
+        # Session expired — re-authenticate and retry once
+        await _session.client.aclose()
+        _session.client     = None
+        _session.xsrf_token = None
+        _session.user_id    = None
+        client = await _get_client()
+        response = await client.get(f"{API_BASE}{path}", params=params, headers=_auth_headers())
 
-    response.raise_for_status()
-    return response.json()
+        response.raise_for_status()
+        return response.json()
 
 
 def _handle_error(e: Exception) -> str:
@@ -149,6 +161,25 @@ def _handle_error(e: Exception) -> str:
     if isinstance(e, RuntimeError):
         return f"Error: {e}"
     return f"Error: Unexpected error — {type(e).__name__}: {e}"
+
+
+async def _api_post(path: str, payload: dict) -> dict:
+    """Make an authenticated POST request, retrying once on 401."""
+    client = await _get_client()
+    response = await client.post(
+        f"{API_BASE}{path}", json=payload, headers=_auth_headers()
+    )
+    if response.status_code == 401:
+        await _session.client.aclose()
+        _session.client     = None
+        _session.xsrf_token = None
+        _session.user_id    = None
+        client = await _get_client()
+        response = await client.post(
+            f"{API_BASE}{path}", json=payload, headers=_auth_headers()
+        )
+    response.raise_for_status()
+    return response.json()
 
 
 def _days_until(expires_on: str) -> Optional[int]:
@@ -554,6 +585,116 @@ async def domain_monitor_get_account_summary() -> str:
 
         return "\n".join(lines)
 
+    except Exception as e:
+        return _handle_error(e)
+
+
+# ---------------------------------------------------------------------------
+# Add domain tool
+# ---------------------------------------------------------------------------
+
+class AddDomainInput(BaseModel):
+    """Input model for adding a domain to monitoring."""
+    model_config = ConfigDict(str_strip_whitespace=True, validate_assignment=True, extra="forbid")
+
+    domain: str = Field(
+        ...,
+        description=(
+            "The domain name to start monitoring, e.g. 'example.com'. "
+            "Do not include 'http://' or trailing slashes."
+        ),
+        min_length=3,
+        max_length=253,
+    )
+    alert_period: int = Field(
+        default=30,
+        description=(
+            "How many days before expiry to send an alert. "
+            "Default is 30 days. Common values: 14, 30, 60, 90."
+        ),
+        ge=1,
+        le=365,
+    )
+
+
+@mcp.tool(
+    name="domain_monitor_add_domain",
+    annotations={
+        "title": "Add a Domain to Monitoring",
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": False,
+    },
+)
+async def domain_monitor_add_domain(params: AddDomainInput) -> str:
+    """Add a new domain to your domain-monitor.io watchlist.
+
+    Registers a domain for expiry monitoring. After adding, domain-monitor.io
+    will crawl it (usually within a few minutes) and populate the expiry date.
+    Great for adding new domains right after registration without opening a browser.
+
+    Args:
+        params (AddDomainInput): Validated input containing:
+            - domain (str): The domain name to monitor, e.g. 'example.com'
+            - alert_period (int): Days before expiry to trigger an alert (default: 30)
+
+    Returns:
+        str: Confirmation message with the newly added domain details.
+
+    Examples:
+        - "Start monitoring newdomain.com" → domain="newdomain.com"
+        - "Add braatz.io to domain monitor with 60-day alerts" → domain="braatz.io", alert_period=60
+        - "Watch example.com for expiry" → domain="example.com"
+
+    Error Handling:
+        - Returns an error if the domain is already in your monitored list
+        - Returns auth error if credentials are invalid
+    """
+    try:
+        # Clean up common input mistakes (http://, www., trailing slashes)
+        domain = params.domain.lower()
+        for prefix in ("https://", "http://", "www."):
+            if domain.startswith(prefix):
+                domain = domain[len(prefix):]
+        domain = domain.rstrip("/")
+
+        result = await _api_post(
+            "/domains",
+            {
+                "domain":       domain,
+                "alert_period": params.alert_period,
+            },
+        )
+
+        # The API returns the new domain object (wrapped in 'model' or directly)
+        new_domain = result.get("model", result)
+        domain_name = new_domain.get("domain", domain)
+        domain_id   = new_domain.get("id", "?")
+        status      = new_domain.get("status", "pending")
+
+        lines = [
+            f"✅ **{domain_name}** added to domain-monitor.io!",
+            "",
+            f"- **Alert period**: {params.alert_period} days before expiry",
+            f"- **Status**: {status} (domain-monitor.io will crawl it shortly)",
+            f"- **Monitor ID**: {domain_id}",
+            "",
+            "Expiry date will appear once the domain has been crawled (usually a few minutes).",
+            f"Use `domain_monitor_check_domain` with domain=\"{domain_name}\" to check back.",
+        ]
+        return "\n".join(lines)
+
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 422:
+            # Likely already exists or invalid domain name
+            try:
+                detail = e.response.json()
+                msg = detail.get("message", "") or str(detail.get("errors", ""))
+                return f"Error adding domain: {msg}"
+            except Exception:
+                pass
+        return _handle_error(e)
     except Exception as e:
         return _handle_error(e)
 
