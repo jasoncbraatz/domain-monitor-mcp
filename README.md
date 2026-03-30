@@ -14,6 +14,7 @@ Once installed, you can ask Claude things like:
 - *"When does braatz.io expire?"*
 - *"Give me a domain health overview"*
 - *"List all my domains sorted by expiry date"*
+- *"Add newdomain.com to domain monitor with a 60-day alert"*
 
 No more digging through emails that landed in spam or SMS alerts that got filtered. Just ask.
 
@@ -27,6 +28,7 @@ No more digging through emails that landed in spam or SMS alerts that got filter
 | `domain_monitor_list_domains` | Full paginated list with optional filter by days-until-expiry |
 | `domain_monitor_check_domain` | Look up a specific domain by name |
 | `domain_monitor_get_account_summary` | Account stats, subscription status, and active alerts |
+| `domain_monitor_add_domain` | Add a new domain to monitoring with a configurable alert period |
 
 ---
 
@@ -97,16 +99,17 @@ This server authenticates using your domain-monitor.io email and password via La
 
 ## How it works (for the curious / developers)
 
-domain-monitor.io is a Nuxt.js SPA backed by a Laravel API. The API lives at `https://api.domain-monitor.io/api/`. Authentication follows the standard Laravel Sanctum flow:
+domain-monitor.io is a Nuxt.js SPA backed by a Laravel API. The API lives at `https://api.domain-monitor.io/`. Authentication follows the standard Laravel Sanctum CSRF + session cookie flow:
 
-1. `GET https://api.domain-monitor.io/sanctum/csrf-cookie` → sets session cookies
-2. `POST https://domain-monitor.io/api/auth/login` with `{email, password}` → authenticates
-3. Subsequent requests to `https://api.domain-monitor.io/api/*` use the session cookies
+1. `GET https://api.domain-monitor.io/sanctum/csrf-cookie` → sets `XSRF-TOKEN` + `domain_monitor_session` cookies
+2. `POST https://api.domain-monitor.io/login` with `{email, password}` + `X-XSRF-TOKEN` header → authenticates
+3. Subsequent requests to `https://api.domain-monitor.io/api/*` use the session cookies + refreshed XSRF token
 
 Key endpoints used:
 - `GET /api/account` — account info + user ID
 - `GET /api/account-dashboard` — summary with expiring domains and alerts
 - `GET /api/account/{user_id}/domains` — paginated domain list with expiry data
+- `POST /api/domains` — add a new domain to monitoring
 
 The API rate limit is 200 requests per session (observed from `x-ratelimit-limit` response headers).
 
@@ -116,7 +119,8 @@ The API rate limit is 200 requests per session (observed from `x-ratelimit-limit
 
 PRs welcome! Some ideas for future improvements:
 
-- Add domain management tools (add/remove domains from monitoring)
+- ~~Add domain to monitoring~~ ✅ Done (`domain_monitor_add_domain`)
+- Remove a domain from monitoring
 - Support for uptime monitor queries
 - Webhook/notification preference management
 - Support for the domain availability checker
