@@ -76,6 +76,17 @@ async def _get_client() -> httpx.AsyncClient:
     return _session.client
 
 
+async def _ensure_auth() -> int:
+    """Ensure session is active and return user_id.
+
+    Call this before building any URL that includes user_id — the f-string
+    in the caller evaluates before _api_get triggers authentication, so we
+    must guarantee user_id is populated first.
+    """
+    await _get_client()
+    return _session.user_id
+
+
 async def _authenticate() -> None:
     """Fetch CSRF cookie then POST credentials. Stores session in _session."""
     if not EMAIL or not PASSWORD:
@@ -297,8 +308,9 @@ async def domain_monitor_list_domains(params: ListDomainsInput) -> str:
         - "Show domains expiring in the next 90 days" → expiring_within_days=90
     """
     try:
+        user_id = await _ensure_auth()
         data = await _api_get(
-            f"/account/{_session.user_id}/domains",
+            f"/account/{user_id}/domains",
             params={
                 "page": params.page,
                 "orderBy": f"domains.{params.sort_by}",
@@ -450,9 +462,10 @@ async def domain_monitor_check_domain(params: CheckDomainInput) -> str:
         - Returns auth error if credentials are invalid
     """
     try:
+        user_id = await _ensure_auth()
         # Fetch all domains (up to 100) sorted by expiry to find the match
         data = await _api_get(
-            f"/account/{_session.user_id}/domains",
+            f"/account/{user_id}/domains",
             params={
                 "page": 1,
                 "orderBy": "domains.expires_on",
@@ -474,7 +487,7 @@ async def domain_monitor_check_domain(params: CheckDomainInput) -> str:
             last_page = model.get("last_page", 1)
             for page in range(2, last_page + 1):
                 page_data = await _api_get(
-                    f"/account/{_session.user_id}/domains",
+                    f"/account/{user_id}/domains",
                     params={
                         "page": page,
                         "orderBy": "domains.expires_on",
