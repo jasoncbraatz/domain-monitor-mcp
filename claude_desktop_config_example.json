@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "domain-monitor": {
+      "command": "python",
+      "args": ["/path/to/domain-monitor-mcp/server.py"],
+      "env": {
+        "DOMAIN_MONITOR_EMAIL": "your@email.com",
+        "DOMAIN_MONITOR_PASSWORD": "yourpassword"
+      }
+    }
+  }
+}
