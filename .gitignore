@@ -1,5 +1,14 @@
 __pycache__/
 *.pyc
-.env
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+*.whl
 .venv/
-.DS_Store
+venv/
+env/
+.env
+.python-version

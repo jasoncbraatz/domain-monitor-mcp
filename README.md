@@ -1,8 +1,10 @@
+<!-- MCP Registry Verified: io.github.jasoncbraatz/domain-monitor-mcp -->
+
 # domain-monitor-mcp
 
 An unofficial MCP (Model Context Protocol) server for [domain-monitor.io](https://domain-monitor.io), enabling AI assistants like Claude to query your domain expiration data directly — no browser required.
 
-> **Note**: This is a community project, not officially supported by domain-monitor.io. It uses the internal API discovered by inspecting browser network traffic. If you're the domain-monitor.io developer and would like to collaborate on an official MCP server or public API, please open an issue — we'd love to work with you! 🤝
+> **Note**: This is a community project, not officially supported by domain-monitor.io. It uses the internal API discovered by inspecting browser network traffic. If you're the domain-monitor.io developer and would like to collaborate on an official MCP server or public API, please open an issue — we'd love to work with you!
 
 ---
 
@@ -34,20 +36,67 @@ No more digging through emails that landed in spam or SMS alerts that got filter
 
 ## Installation
 
-### Prerequisites
+### Option A: Install from PyPI (recommended)
+
+```bash
+pip install domain-monitor-mcp
+```
+
+Or with [uv](https://docs.astral.sh/uv/) (faster):
+
+```bash
+uv pip install domain-monitor-mcp
+```
+
+Then add to your Claude Desktop config:
+
+```json
+{
+  "mcpServers": {
+    "domain-monitor": {
+      "command": "domain-monitor-mcp",
+      "env": {
+        "DOMAIN_MONITOR_EMAIL": "your@email.com",
+        "DOMAIN_MONITOR_PASSWORD": "yourpassword"
+      }
+    }
+  }
+}
+```
+
+Or run directly with uvx (no install needed):
+
+```json
+{
+  "mcpServers": {
+    "domain-monitor": {
+      "command": "uvx",
+      "args": ["domain-monitor-mcp"],
+      "env": {
+        "DOMAIN_MONITOR_EMAIL": "your@email.com",
+        "DOMAIN_MONITOR_PASSWORD": "yourpassword"
+      }
+    }
+  }
+}
+```
+
+### Option B: Clone from source
+
+#### Prerequisites
 
 - Python 3.10+
 - A [domain-monitor.io](https://domain-monitor.io) account (free or paid)
 - Claude Desktop (or any MCP-compatible client)
 
-### 1. Clone this repo
+#### 1. Clone this repo
 
 ```bash
 git clone https://github.com/jasoncbraatz/domain-monitor-mcp.git
 cd domain-monitor-mcp
 ```
 
-### 2. Install dependencies
+#### 2. Install dependencies
 
 ```bash
 pip install -r requirements.txt
@@ -59,7 +108,7 @@ Or with uv (faster):
 uv pip install -r requirements.txt
 ```
 
-### 3. Configure Claude Desktop
+#### 3. Configure Claude Desktop
 
 Add the following to your Claude Desktop config file:
 
@@ -81,9 +130,9 @@ Add the following to your Claude Desktop config file:
 }
 ```
 
-> 💡 Replace `/absolute/path/to/domain-monitor-mcp/server.py` with the actual path where you cloned this repo.
+> Replace `/absolute/path/to/domain-monitor-mcp/server.py` with the actual path where you cloned this repo.
 
-### 4. Restart Claude Desktop
+#### 4. Restart Claude Desktop
 
 After saving the config, fully quit and relaunch Claude Desktop. The `domain-monitor` tools will appear in Claude's tool list.
 
@@ -101,8 +150,8 @@ This server authenticates using your domain-monitor.io email and password via La
 
 domain-monitor.io is a Nuxt.js SPA backed by a Laravel API. The API lives at `https://api.domain-monitor.io/`. Authentication follows the standard Laravel Sanctum CSRF + session cookie flow:
 
-1. `GET https://api.domain-monitor.io/sanctum/csrf-cookie` → sets `XSRF-TOKEN` + `domain_monitor_session` cookies
-2. `POST https://api.domain-monitor.io/login` with `{email, password}` + `X-XSRF-TOKEN` header → authenticates
+1. `GET https://api.domain-monitor.io/sanctum/csrf-cookie` — sets `XSRF-TOKEN` + `domain_monitor_session` cookies
+2. `POST https://api.domain-monitor.io/login` with `{email, password}` + `X-XSRF-TOKEN` header — authenticates
 3. Subsequent requests to `https://api.domain-monitor.io/api/*` use the session cookies + refreshed XSRF token
 
 Key endpoints used:
@@ -119,7 +168,7 @@ The API rate limit is 200 requests per session (observed from `x-ratelimit-limit
 
 PRs welcome! Some ideas for future improvements:
 
-- ~~Add domain to monitoring~~ ✅ Done (`domain_monitor_add_domain`)
+- ~~Add domain to monitoring~~ Done (`domain_monitor_add_domain`)
 - Support for uptime monitor queries
 - Webhook/notification preference management
 - Support for the domain availability checker
