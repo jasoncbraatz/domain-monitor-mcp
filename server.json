@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.jasoncbraatz/domain-monitor-mcp",
   "title": "Domain Monitor",
-  "description": "Query domain expiration data from domain-monitor.io — check which domains are expiring soon, look up specific domains, get account summaries, and add new domains to monitoring.",
+  "description": "Query domain expiration data from domain-monitor.io via AI assistants like Claude.",
   "repository": {
     "url": "https://github.com/jasoncbraatz/domain-monitor-mcp",
     "source": "github"
