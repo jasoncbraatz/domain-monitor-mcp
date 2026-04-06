@@ -1,4 +1,4 @@
-<!-- MCP Registry Verified: io.github.jasoncbraatz/domain-monitor-mcp -->
+<!-- mcp-name: io.github.jasoncbraatz/domain-monitor-mcp -->
 
 # domain-monitor-mcp
 
