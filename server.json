@@ -1,0 +1,37 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.jasoncbraatz/domain-monitor-mcp",
+  "title": "Domain Monitor",
+  "description": "Query domain expiration data from domain-monitor.io — check which domains are expiring soon, look up specific domains, get account summaries, and add new domains to monitoring.",
+  "repository": {
+    "url": "https://github.com/jasoncbraatz/domain-monitor-mcp",
+    "source": "github"
+  },
+  "version": "0.1.1",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "domain-monitor-mcp",
+      "version": "0.1.1",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "description": "Your domain-monitor.io account email address",
+          "isRequired": true,
+          "format": "string",
+          "isSecret": false,
+          "name": "DOMAIN_MONITOR_EMAIL"
+        },
+        {
+          "description": "Your domain-monitor.io account password",
+          "isRequired": true,
+          "format": "string",
+          "isSecret": true,
+          "name": "DOMAIN_MONITOR_PASSWORD"
+        }
+      ]
+    }
+  ]
+}
