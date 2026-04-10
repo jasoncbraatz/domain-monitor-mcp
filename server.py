@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MCP Server for domain-monitor.io
+MCP Server for domain-monitor.io  (v1.2.0)
 
 Provides tools to query domain expiration data from domain-monitor.io,
 enabling LLMs to answer questions like "what domains are expiring soon?"
@@ -19,6 +19,8 @@ and Nuxt app JS bundle inspection):
   Domains:   GET  /api/account/{user_id}/domains
   Add:       POST /api/account/{user_id}/domains
 """
+
+__version__ = "1.2.0"
 
 import json
 import os
@@ -223,13 +225,13 @@ def _expiry_emoji(days: Optional[int]) -> str:
     if days is None:
         return "\u2753"
     if days < 0:
-        return "\ud83d\udca0"  # expired
+        return "\U0001f4a0"  # expired
     if days <= 14:
-        return "\ud83d\udea8"  # critical
+        return "\U0001f6a8"  # critical
     if days <= 30:
         return "\u26a0\ufe0f"  # warning
     if days <= 90:
-        return "\ud83d\udcc5"  # heads-up
+        return "\U0001f4c5"  # heads-up
     return "\u2705"  # all good
 
 
@@ -319,9 +321,9 @@ async def domain_monitor_list_domains(params: ListDomainsInput) -> str:
         str: Markdown-formatted table of domains with expiry dates and urgency indicators.
 
     Examples:
-        - "What domains are expiring soon?" \u2192 use expiring_within_days=30
-        - "List all my domains" \u2192 use defaults (returns all, sorted soonest first)
-        - "Show domains expiring in the next 90 days" \u2192 expiring_within_days=90
+        - \"What domains are expiring soon?\" \u2192 use expiring_within_days=30
+        - \"List all my domains\" \u2192 use defaults (returns all, sorted soonest first)
+        - \"Show domains expiring in the next 90 days\" \u2192 expiring_within_days=90
     """
     try:
         user_id = await _ensure_auth()
@@ -359,8 +361,8 @@ async def domain_monitor_list_domains(params: ListDomainsInput) -> str:
         if params.expiring_within_days is not None:
             lines.append(f"*Filtered: expiring within **{params.expiring_within_days} days***\n")
         lines.append(f"Showing {len(domains)} of {total} total domains.\n")
-        lines.append(f"| Status | Domain | Expires | Days Left | Registrar |")
-        lines.append(f"|--------|--------|---------|-----------|-----------|")
+        lines.append("| Status | Domain | Expires | Days Left | Registrar |")
+        lines.append("|--------|--------|---------|-----------|-----------|")
 
         for d in domains:
             days = _days_until(d.get("expires_on"))
@@ -375,7 +377,7 @@ async def domain_monitor_list_domains(params: ListDomainsInput) -> str:
             )
 
         lines.append("")
-        lines.append("**Legend:** \ud83d\udea8 Critical (\u226414d) | \u26a0\ufe0f Warning (\u226430d) | \ud83d\udcc5 Heads-up (\u226490d) | \u2705 OK | \ud83d\udca0 Expired")
+        lines.append("**Legend:** \U0001f6a8 Critical (\u226414d) | \u26a0\ufe0f Warning (\u226430d) | \U0001f4c5 Heads-up (\u226490d) | \u2705 OK | \U0001f4a0 Expired")
 
         return "\n".join(lines)
 
@@ -396,7 +398,7 @@ async def domain_monitor_list_domains(params: ListDomainsInput) -> str:
 async def domain_monitor_get_expiring_soon() -> str:
     """Get a quick summary of domains expiring within the next 30 days.
 
-    This is the fastest way to check "what needs my attention right now?"
+    This is the fastest way to check \"what needs my attention right now?\"
     Returns only domains flagged as expiring soon by domain-monitor.io,
     along with account-level alert counts.
 
@@ -404,9 +406,9 @@ async def domain_monitor_get_expiring_soon() -> str:
         str: Markdown summary of urgent domains and alert counts.
 
     Examples:
-        - "Any domains expiring soon?" \u2192 call this tool
-        - "What needs renewing?" \u2192 call this tool
-        - "Domain health check" \u2192 call this tool
+        - \"Any domains expiring soon?\" \u2192 call this tool
+        - \"What needs renewing?\" \u2192 call this tool
+        - \"Domain health check\" \u2192 call this tool
     """
     try:
         data = await _api_get("/account-dashboard")
@@ -416,9 +418,9 @@ async def domain_monitor_get_expiring_soon() -> str:
 
         domains_expiring = user.get("domains_expiring_count", 0)
         domains_total = user.get("domains_count", 0)
-        expiring_domains = user.get("domains", [])  # dashboard returns only expiring ones
+        expiring_domains = user.get("domains", [])
 
-        lines = ["# \ud83d\udea8 Domain Monitor \u2014 Expiring Soon", ""]
+        lines = ["# \U0001f6a8 Domain Monitor \u2014 Expiring Soon", ""]
         lines.append(f"**{domains_expiring} of {domains_total} domains** are expiring within your alert window.\n")
 
         if not expiring_domains:
@@ -436,7 +438,7 @@ async def domain_monitor_get_expiring_soon() -> str:
         if alerts:
             lines.append("\n## Account Alerts")
             for alert in alerts:
-                variant_emoji = "\ud83d\udd34" if alert.get("variant") == "danger" else "\ud83d\udd35"
+                variant_emoji = "\U0001f534" if alert.get("variant") == "danger" else "\U0001f535"
                 lines.append(f"- {variant_emoji} **{alert['label']}**: {alert['subtitle']}")
 
         return "\n".join(lines)
@@ -469,17 +471,16 @@ async def domain_monitor_check_domain(params: CheckDomainInput) -> str:
         str: Markdown-formatted domain details, or a message if not found.
 
     Examples:
-        - "When does example.com expire?" \u2192 domain="example.com"
-        - "Is braatz.io expiring soon?" \u2192 domain="braatz.io"
-        - "Check woodcomputer.com" \u2192 domain="woodcomputer.com"
+        - \"When does example.com expire?\" \u2192 domain=\"example.com\"
+        - \"Is braatz.io expiring soon?\" \u2192 domain=\"braatz.io\"
+        - \"Check woodcomputer.com\" \u2192 domain=\"woodcomputer.com\"
 
     Error Handling:
-        - Returns "not found" message if domain isn't in your monitored list
+        - Returns \"not found\" message if domain isn't in your monitored list
         - Returns auth error if credentials are invalid
     """
     try:
         user_id = await _ensure_auth()
-        # Fetch all domains (up to 100) sorted by expiry to find the match
         data = await _api_get(
             f"/account/{user_id}/domains",
             params={
@@ -494,11 +495,9 @@ async def domain_monitor_check_domain(params: CheckDomainInput) -> str:
         domains = model.get("data", [])
         total = model.get("total", 0)
 
-        # Search across all pages if needed
         target = params.domain.lower().strip()
         match = next((d for d in domains if d["domain"].lower() == target), None)
 
-        # If not found on first page and there are more pages, keep searching
         if not match and total > 100:
             last_page = model.get("last_page", 1)
             for page in range(2, last_page + 1):
@@ -531,15 +530,15 @@ async def domain_monitor_check_domain(params: CheckDomainInput) -> str:
         if days is None:
             lines.append("**Expiry date**: Unknown")
         elif days < 0:
-            lines.append(f"**Status**: \ud83d\udca0 **EXPIRED** {abs(days)} days ago!")
+            lines.append(f"**Status**: \U0001f4a0 **EXPIRED** {abs(days)} days ago!")
         elif days == 0:
-            lines.append("**Status**: \ud83d\udea8 **EXPIRES TODAY!**")
+            lines.append("**Status**: \U0001f6a8 **EXPIRES TODAY!**")
         elif days <= 14:
-            lines.append(f"**Status**: \ud83d\udea8 Critical \u2014 expires in **{days} days**")
+            lines.append(f"**Status**: \U0001f6a8 Critical \u2014 expires in **{days} days**")
         elif days <= 30:
             lines.append(f"**Status**: \u26a0\ufe0f Warning \u2014 expires in **{days} days**")
         elif days <= 90:
-            lines.append(f"**Status**: \ud83d\udcc5 Heads-up \u2014 expires in **{days} days**")
+            lines.append(f"**Status**: \U0001f4c5 Heads-up \u2014 expires in **{days} days**")
         else:
             lines.append(f"**Status**: \u2705 Good \u2014 expires in {days} days")
 
@@ -573,15 +572,15 @@ async def domain_monitor_get_account_summary() -> str:
     """Get a high-level summary of your domain-monitor.io account.
 
     Returns total domain count, expiring counts, subscription status,
-    and active alerts. Good for a quick "how's everything looking?" check.
+    and active alerts. Good for a quick \"how's everything looking?\" check.
 
     Returns:
         str: Markdown-formatted account overview.
 
     Examples:
-        - "Give me a domain health overview" \u2192 call this tool
-        - "How many domains am I monitoring?" \u2192 call this tool
-        - "Is my subscription active?" \u2192 call this tool
+        - \"Give me a domain health overview\" \u2192 call this tool
+        - \"How many domains am I monitoring?\" \u2192 call this tool
+        - \"Is my subscription active?\" \u2192 call this tool
     """
     try:
         data = await _api_get("/account-dashboard")
@@ -592,7 +591,8 @@ async def domain_monitor_get_account_summary() -> str:
         lines = ["# Domain Monitor \u2014 Account Summary", ""]
         lines.append(f"**Account**: {user.get('full_name', 'Unknown')} ({user.get('email', '')})")
         lines.append(f"**Timezone**: {user.get('timezone', 'Unknown')}")
-        lines.append(f"**Subscription**: {'\u2705 Active' if user.get('is_subscribed') else '\u274c Inactive'}")
+        sub_status = '\u2705 Active' if user.get('is_subscribed') else '\u274c Inactive'
+        lines.append(f"**Subscription**: {sub_status}")
         lines.append("")
         lines.append("## Domain Stats")
         lines.append(f"- **Total domains monitored**: {user.get('domains_count', 0)}")
@@ -607,7 +607,7 @@ async def domain_monitor_get_account_summary() -> str:
         if alerts:
             lines.append("\n## Active Alerts")
             for alert in alerts:
-                variant_emoji = "\ud83d\udd34" if alert.get("variant") == "danger" else "\ud83d\udd35"
+                variant_emoji = "\U0001f534" if alert.get("variant") == "danger" else "\U0001f535"
                 lines.append(f"- {variant_emoji} **{alert['label']}**: {alert['subtitle']}")
         else:
             lines.append("\n\u2705 No active alerts.")
@@ -690,10 +690,10 @@ async def domain_monitor_add_domain(params: AddDomainInput) -> str:
         str: Confirmation message with the newly added domain details.
 
     Examples:
-        - "Start monitoring newdomain.com" \u2192 domain="newdomain.com"
-        - "Add braatz.io to domain monitor with 60-day alerts" \u2192 domain="braatz.io", alert_period=60
-        - "Watch example.com for expiry" \u2192 domain="example.com"
-        - "Add example.com without DNS monitoring" \u2192 domain="example.com", dns_checks_enabled=False
+        - \"Start monitoring newdomain.com\" \u2192 domain=\"newdomain.com\"
+        - \"Add braatz.io to domain monitor with 60-day alerts\" \u2192 domain=\"braatz.io\", alert_period=60
+        - \"Watch example.com for expiry\" \u2192 domain=\"example.com\"
+        - \"Add example.com without DNS monitoring\" \u2192 domain=\"example.com\", dns_checks_enabled=False
 
     Error Handling:
         - Returns an error if the domain is already in your monitored list
