@@ -6,16 +6,18 @@ Provides tools to query domain expiration data from domain-monitor.io,
 enabling LLMs to answer questions like "what domains are expiring soon?"
 without the user needing to open a browser.
 
-Authentication uses JWT Bearer tokens via the Nuxt Auth module endpoint.
-Tokens expire after 30 minutes and are automatically refreshed on 401.
+Authentication uses Laravel Sanctum session-based auth (CSRF cookie + XSRF token).
+Sessions are maintained in memory and automatically refreshed on 401.
 
 Discovered API (unofficial - reverse engineered from browser network traffic
 and Nuxt app JS bundle inspection):
-  Auth:      POST https://domain-monitor.io/api/auth/login  → JWT token
+  CSRF:      GET  https://api.domain-monitor.io/sanctum/csrf-cookie
+  Login:     POST https://api.domain-monitor.io/login
   Base:      https://api.domain-monitor.io/api/
-  Dashboard: /api/account-dashboard
-  Account:   /api/account
-  Domains:   /api/account/{user_id}/domains
+  Dashboard: GET  /api/account-dashboard
+  Account:   GET  /api/account
+  Domains:   GET  /api/account/{user_id}/domains
+  Add:       POST /api/account/{user_id}/domains
 """
 
 import json
@@ -160,6 +162,20 @@ async def _api_get(path: str, params: Optional[dict] = None) -> dict:
 def _handle_error(e: Exception) -> str:
     """Format exceptions into clear, actionable error messages."""
     if isinstance(e, httpx.HTTPStatusError):
+        if e.response.status_code == 400:
+            try:
+                body = e.response.json()
+                msg = body.get("message", "") or ""
+                errors = body.get("errors", {})
+                metadata = body.get("metadata", {})
+                detail = metadata.get("message", "") or msg
+                if errors:
+                    detail += " " + "; ".join(
+                        f"{k}: {', '.join(v)}" for k, v in errors.items()
+                    )
+                return f"Error: Validation failed \u2014 {detail.strip()}"
+            except Exception:
+                return "Error: Bad request (400). Check your input parameters."
         if e.response.status_code == 401:
             return "Error: Authentication failed. Check your DOMAIN_MONITOR_EMAIL and DOMAIN_MONITOR_PASSWORD."
         if e.response.status_code == 429:
@@ -168,10 +184,10 @@ def _handle_error(e: Exception) -> str:
             return "Error: Resource not found. The domain or resource may not exist in your account."
         return f"Error: API returned status {e.response.status_code}."
     if isinstance(e, httpx.TimeoutException):
-        return "Error: Request timed out. domain-monitor.io may be slow — try again."
+        return "Error: Request timed out. domain-monitor.io may be slow \u2014 try again."
     if isinstance(e, RuntimeError):
         return f"Error: {e}"
-    return f"Error: Unexpected error — {type(e).__name__}: {e}"
+    return f"Error: Unexpected error \u2014 {type(e).__name__}: {e}"
 
 
 async def _api_post(path: str, payload: dict) -> dict:
@@ -205,16 +221,16 @@ def _days_until(expires_on: str) -> Optional[int]:
 def _expiry_emoji(days: Optional[int]) -> str:
     """Return a visual indicator for urgency."""
     if days is None:
-        return "❓"
+        return "\u2753"
     if days < 0:
-        return "💀"  # expired
+        return "\ud83d\udca0"  # expired
     if days <= 14:
-        return "🚨"  # critical
+        return "\ud83d\udea8"  # critical
     if days <= 30:
-        return "⚠️"  # warning
+        return "\u26a0\ufe0f"  # warning
     if days <= 90:
-        return "📅"  # heads-up
-    return "✅"  # all good
+        return "\ud83d\udcc5"  # heads-up
+    return "\u2705"  # all good
 
 
 # ---------------------------------------------------------------------------
@@ -294,18 +310,18 @@ async def domain_monitor_list_domains(params: ListDomainsInput) -> str:
     Args:
         params (ListDomainsInput): Validated input parameters containing:
             - expiring_within_days (Optional[int]): Filter to domains expiring within N days (default: all)
-            - sort_by (str): Sort field — 'expires_on' or 'domain' (default: 'expires_on')
+            - sort_by (str): Sort field \u2014 'expires_on' or 'domain' (default: 'expires_on')
             - sort_order (str): 'asc' or 'desc' (default: 'asc', soonest first)
             - page (int): Page number (default: 1)
-            - per_page (int): Results per page, 1–100 (default: 100)
+            - per_page (int): Results per page, 1\u2013100 (default: 100)
 
     Returns:
         str: Markdown-formatted table of domains with expiry dates and urgency indicators.
 
     Examples:
-        - "What domains are expiring soon?" → use expiring_within_days=30
-        - "List all my domains" → use defaults (returns all, sorted soonest first)
-        - "Show domains expiring in the next 90 days" → expiring_within_days=90
+        - "What domains are expiring soon?" \u2192 use expiring_within_days=30
+        - "List all my domains" \u2192 use defaults (returns all, sorted soonest first)
+        - "Show domains expiring in the next 90 days" \u2192 expiring_within_days=90
     """
     try:
         user_id = await _ensure_auth()
@@ -339,7 +355,7 @@ async def domain_monitor_list_domains(params: ListDomainsInput) -> str:
             )
             return f"No domains found{filter_note}."
 
-        lines = ["# Domain Monitor — Monitored Domains", ""]
+        lines = ["# Domain Monitor \u2014 Monitored Domains", ""]
         if params.expiring_within_days is not None:
             lines.append(f"*Filtered: expiring within **{params.expiring_within_days} days***\n")
         lines.append(f"Showing {len(domains)} of {total} total domains.\n")
@@ -352,14 +368,14 @@ async def domain_monitor_list_domains(params: ListDomainsInput) -> str:
             days_str = f"{days}d" if days is not None else "unknown"
             if days is not None and days < 0:
                 days_str = f"EXPIRED ({abs(days)}d ago)"
-            registrar = d.get("registrar_name") or "—"
+            registrar = d.get("registrar_name") or "\u2014"
             expires = d.get("expires_on") or "unknown"
             lines.append(
                 f"| {emoji} | {d['domain']} | {expires} | {days_str} | {registrar} |"
             )
 
         lines.append("")
-        lines.append("**Legend:** 🚨 Critical (≤14d) | ⚠️ Warning (≤30d) | 📅 Heads-up (≤90d) | ✅ OK | 💀 Expired")
+        lines.append("**Legend:** \ud83d\udea8 Critical (\u226414d) | \u26a0\ufe0f Warning (\u226430d) | \ud83d\udcc5 Heads-up (\u226490d) | \u2705 OK | \ud83d\udca0 Expired")
 
         return "\n".join(lines)
 
@@ -388,9 +404,9 @@ async def domain_monitor_get_expiring_soon() -> str:
         str: Markdown summary of urgent domains and alert counts.
 
     Examples:
-        - "Any domains expiring soon?" → call this tool
-        - "What needs renewing?" → call this tool
-        - "Domain health check" → call this tool
+        - "Any domains expiring soon?" \u2192 call this tool
+        - "What needs renewing?" \u2192 call this tool
+        - "Domain health check" \u2192 call this tool
     """
     try:
         data = await _api_get("/account-dashboard")
@@ -402,11 +418,11 @@ async def domain_monitor_get_expiring_soon() -> str:
         domains_total = user.get("domains_count", 0)
         expiring_domains = user.get("domains", [])  # dashboard returns only expiring ones
 
-        lines = ["# 🚨 Domain Monitor — Expiring Soon", ""]
+        lines = ["# \ud83d\udea8 Domain Monitor \u2014 Expiring Soon", ""]
         lines.append(f"**{domains_expiring} of {domains_total} domains** are expiring within your alert window.\n")
 
         if not expiring_domains:
-            lines.append("✅ No domains expiring imminently — you're good!")
+            lines.append("\u2705 No domains expiring imminently \u2014 you're good!")
         else:
             lines.append("| Status | Domain | Expires | Days Left |")
             lines.append("|--------|--------|---------|-----------|")
@@ -420,7 +436,7 @@ async def domain_monitor_get_expiring_soon() -> str:
         if alerts:
             lines.append("\n## Account Alerts")
             for alert in alerts:
-                variant_emoji = "🔴" if alert.get("variant") == "danger" else "🔵"
+                variant_emoji = "\ud83d\udd34" if alert.get("variant") == "danger" else "\ud83d\udd35"
                 lines.append(f"- {variant_emoji} **{alert['label']}**: {alert['subtitle']}")
 
         return "\n".join(lines)
@@ -453,9 +469,9 @@ async def domain_monitor_check_domain(params: CheckDomainInput) -> str:
         str: Markdown-formatted domain details, or a message if not found.
 
     Examples:
-        - "When does example.com expire?" → domain="example.com"
-        - "Is braatz.io expiring soon?" → domain="braatz.io"
-        - "Check woodcomputer.com" → domain="woodcomputer.com"
+        - "When does example.com expire?" \u2192 domain="example.com"
+        - "Is braatz.io expiring soon?" \u2192 domain="braatz.io"
+        - "Check woodcomputer.com" \u2192 domain="woodcomputer.com"
 
     Error Handling:
         - Returns "not found" message if domain isn't in your monitored list
@@ -515,17 +531,17 @@ async def domain_monitor_check_domain(params: CheckDomainInput) -> str:
         if days is None:
             lines.append("**Expiry date**: Unknown")
         elif days < 0:
-            lines.append(f"**Status**: 💀 **EXPIRED** {abs(days)} days ago!")
+            lines.append(f"**Status**: \ud83d\udca0 **EXPIRED** {abs(days)} days ago!")
         elif days == 0:
-            lines.append("**Status**: 🚨 **EXPIRES TODAY!**")
+            lines.append("**Status**: \ud83d\udea8 **EXPIRES TODAY!**")
         elif days <= 14:
-            lines.append(f"**Status**: 🚨 Critical — expires in **{days} days**")
+            lines.append(f"**Status**: \ud83d\udea8 Critical \u2014 expires in **{days} days**")
         elif days <= 30:
-            lines.append(f"**Status**: ⚠️ Warning — expires in **{days} days**")
+            lines.append(f"**Status**: \u26a0\ufe0f Warning \u2014 expires in **{days} days**")
         elif days <= 90:
-            lines.append(f"**Status**: 📅 Heads-up — expires in **{days} days**")
+            lines.append(f"**Status**: \ud83d\udcc5 Heads-up \u2014 expires in **{days} days**")
         else:
-            lines.append(f"**Status**: ✅ Good — expires in {days} days")
+            lines.append(f"**Status**: \u2705 Good \u2014 expires in {days} days")
 
         lines.append(f"**Expires on**: {match.get('expires_on', 'unknown')}")
         if match.get("created_on"):
@@ -563,9 +579,9 @@ async def domain_monitor_get_account_summary() -> str:
         str: Markdown-formatted account overview.
 
     Examples:
-        - "Give me a domain health overview" → call this tool
-        - "How many domains am I monitoring?" → call this tool
-        - "Is my subscription active?" → call this tool
+        - "Give me a domain health overview" \u2192 call this tool
+        - "How many domains am I monitoring?" \u2192 call this tool
+        - "Is my subscription active?" \u2192 call this tool
     """
     try:
         data = await _api_get("/account-dashboard")
@@ -573,10 +589,10 @@ async def domain_monitor_get_account_summary() -> str:
         user = model.get("user", {})
         alerts = model.get("alerts", [])
 
-        lines = ["# Domain Monitor — Account Summary", ""]
+        lines = ["# Domain Monitor \u2014 Account Summary", ""]
         lines.append(f"**Account**: {user.get('full_name', 'Unknown')} ({user.get('email', '')})")
         lines.append(f"**Timezone**: {user.get('timezone', 'Unknown')}")
-        lines.append(f"**Subscription**: {'✅ Active' if user.get('is_subscribed') else '❌ Inactive'}")
+        lines.append(f"**Subscription**: {'\u2705 Active' if user.get('is_subscribed') else '\u274c Inactive'}")
         lines.append("")
         lines.append("## Domain Stats")
         lines.append(f"- **Total domains monitored**: {user.get('domains_count', 0)}")
@@ -591,10 +607,10 @@ async def domain_monitor_get_account_summary() -> str:
         if alerts:
             lines.append("\n## Active Alerts")
             for alert in alerts:
-                variant_emoji = "🔴" if alert.get("variant") == "danger" else "🔵"
+                variant_emoji = "\ud83d\udd34" if alert.get("variant") == "danger" else "\ud83d\udd35"
                 lines.append(f"- {variant_emoji} **{alert['label']}**: {alert['subtitle']}")
         else:
-            lines.append("\n✅ No active alerts.")
+            lines.append("\n\u2705 No active alerts.")
 
         return "\n".join(lines)
 
@@ -628,6 +644,21 @@ class AddDomainInput(BaseModel):
         ge=1,
         le=365,
     )
+    certificate_checks_enabled: bool = Field(
+        default=True,
+        description="Enable SSL certificate monitoring. Default: True.",
+    )
+    dns_checks_enabled: bool = Field(
+        default=True,
+        description="Enable DNS record monitoring. Default: True.",
+    )
+    blacklist_checks_enabled: bool = Field(
+        default=False,
+        description=(
+            "Enable domain blacklist monitoring. Default: False. "
+            "Note: your plan may have a limited number of blacklist monitors."
+        ),
+    )
 
 
 @mcp.tool(
@@ -651,14 +682,18 @@ async def domain_monitor_add_domain(params: AddDomainInput) -> str:
         params (AddDomainInput): Validated input containing:
             - domain (str): The domain name to monitor, e.g. 'example.com'
             - alert_period (int): Days before expiry to trigger an alert (default: 30)
+            - certificate_checks_enabled (bool): Enable SSL cert monitoring (default: True)
+            - dns_checks_enabled (bool): Enable DNS monitoring (default: True)
+            - blacklist_checks_enabled (bool): Enable blacklist monitoring (default: False)
 
     Returns:
         str: Confirmation message with the newly added domain details.
 
     Examples:
-        - "Start monitoring newdomain.com" → domain="newdomain.com"
-        - "Add braatz.io to domain monitor with 60-day alerts" → domain="braatz.io", alert_period=60
-        - "Watch example.com for expiry" → domain="example.com"
+        - "Start monitoring newdomain.com" \u2192 domain="newdomain.com"
+        - "Add braatz.io to domain monitor with 60-day alerts" \u2192 domain="braatz.io", alert_period=60
+        - "Watch example.com for expiry" \u2192 domain="example.com"
+        - "Add example.com without DNS monitoring" \u2192 domain="example.com", dns_checks_enabled=False
 
     Error Handling:
         - Returns an error if the domain is already in your monitored list
@@ -678,8 +713,11 @@ async def domain_monitor_add_domain(params: AddDomainInput) -> str:
         result = await _api_post(
             f"/account/{user_id}/domains",
             {
-                "domain":       domain,
-                "alert_period": params.alert_period,
+                "domain":                     domain,
+                "alert_period":               params.alert_period,
+                "certificate_checks_enabled": params.certificate_checks_enabled,
+                "dns_checks_enabled":         params.dns_checks_enabled,
+                "blacklist_checks_enabled":   params.blacklist_checks_enabled,
             },
         )
 
@@ -690,7 +728,7 @@ async def domain_monitor_add_domain(params: AddDomainInput) -> str:
         status      = new_domain.get("status", "pending")
 
         lines = [
-            f"✅ **{domain_name}** added to domain-monitor.io!",
+            f"\u2705 **{domain_name}** added to domain-monitor.io!",
             "",
             f"- **Alert period**: {params.alert_period} days before expiry",
             f"- **Status**: {status} (domain-monitor.io will crawl it shortly)",

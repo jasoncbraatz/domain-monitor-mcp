@@ -2,7 +2,7 @@
 
 An unofficial MCP (Model Context Protocol) server for [domain-monitor.io](https://domain-monitor.io), enabling AI assistants like Claude to query your domain expiration data directly — no browser required.
 
-> **Note**: This is a community project, not officially supported by domain-monitor.io. It uses the internal API discovered by inspecting browser network traffic. If you're the domain-monitor.io developer and would like to collaborate on an official MCP server or public API, please open an issue — we'd love to work with you! 🤝
+> **Note**: This is a community project, not officially supported by domain-monitor.io. It uses the internal API discovered by inspecting browser network traffic. If you're the domain-monitor.io developer and would like to collaborate on an official MCP server or public API, please open an issue — we'd love to work with you!
 
 ---
 
@@ -28,7 +28,7 @@ No more digging through emails that landed in spam or SMS alerts that got filter
 | `domain_monitor_list_domains` | Full paginated list with optional filter by days-until-expiry |
 | `domain_monitor_check_domain` | Look up a specific domain by name |
 | `domain_monitor_get_account_summary` | Account stats, subscription status, and active alerts |
-| `domain_monitor_add_domain` | Add a new domain to monitoring with a configurable alert period |
+| `domain_monitor_add_domain` | Add a new domain to monitoring with configurable alert period and monitoring toggles |
 
 ---
 
@@ -81,7 +81,7 @@ Add the following to your Claude Desktop config file:
 }
 ```
 
-> 💡 Replace `/absolute/path/to/domain-monitor-mcp/server.py` with the actual path where you cloned this repo.
+> Replace `/absolute/path/to/domain-monitor-mcp/server.py` with the actual path where you cloned this repo.
 
 ### 4. Restart Claude Desktop
 
@@ -109,7 +109,18 @@ Key endpoints used:
 - `GET /api/account` — account info + user ID
 - `GET /api/account-dashboard` — summary with expiring domains and alerts
 - `GET /api/account/{user_id}/domains` — paginated domain list with expiry data
-- `POST /api/domains` — add a new domain to monitoring
+- `POST /api/account/{user_id}/domains` — add a new domain to monitoring
+
+The POST payload for adding a domain requires these fields:
+```json
+{
+  "domain": "example.com",
+  "alert_period": 30,
+  "certificate_checks_enabled": true,
+  "dns_checks_enabled": true,
+  "blacklist_checks_enabled": false
+}
+```
 
 The API rate limit is 200 requests per session (observed from `x-ratelimit-limit` response headers).
 
@@ -119,14 +130,18 @@ The API rate limit is 200 requests per session (observed from `x-ratelimit-limit
 
 PRs welcome! Some ideas for future improvements:
 
-- ~~Add domain to monitoring~~ ✅ Done (`domain_monitor_add_domain`)
 - Support for uptime monitor queries
 - Webhook/notification preference management
 - Support for the domain availability checker
-
-**Note on deletions:** Removing a domain from monitoring is intentionally not supported here — that's a destructive action best done through the domain-monitor.io web UI where you can see exactly what you're removing. A little friction before deleting things is a feature, not a bug.
+- Delete domain from monitoring (intentionally omitted — destructive actions should go through the web UI)
 
 If you're the domain-monitor.io developer and want to add official API token support, this project would love to adopt it — just open an issue!
+
+---
+
+## Troubleshooting
+
+See [OPS.md](OPS.md) for detailed troubleshooting, reinstallation steps, and architecture notes.
 
 ---
 
