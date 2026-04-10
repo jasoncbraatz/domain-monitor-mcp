@@ -672,8 +672,11 @@ async def domain_monitor_add_domain(params: AddDomainInput) -> str:
                 domain = domain[len(prefix):]
         domain = domain.rstrip("/")
 
+        # Ensure auth and get user_id (same pattern as list/check tools)
+        user_id = await _ensure_auth()
+
         result = await _api_post(
-            "/domains",
+            f"/account/{user_id}/domains",
             {
                 "domain":       domain,
                 "alert_period": params.alert_period,
