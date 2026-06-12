@@ -1,6 +1,6 @@
 # OPS.md — domain-monitor-mcp Operations & Troubleshooting
 
-This document is written for a future Opus session that needs to reinstall,
+This document is written for a future Claude session that needs to reinstall,
 debug, or extend the domain-monitor-mcp server. It captures hard-won
 knowledge from the April 2026 debugging sessions.
 
@@ -167,7 +167,7 @@ If the API changes, here's how to reverse-engineer the new endpoints:
 | 2026-04-10 | Fixed add_domain: added required boolean fields to POST payload |
 | 2026-04-10 | Added 400 error handling with validation detail extraction |
 | 2026-04-10 | Fixed README: corrected POST endpoint from `/api/domains` to `/api/account/{user_id}/domains` |
-| 2026-04-10 | Added OPS.md for future Opus sessions |
+| 2026-04-10 | Added OPS.md for future Claude sessions |
 | 2026-04-09 | Initial add_domain tool (incorrect payload — missing boolean fields) |
 | 2026-04-09 | Changed POST path from `/domains` to `/account/{user_id}/domains` |
 | 2026-04-08 | Initial release: list, check, expiring_soon, account_summary tools |
